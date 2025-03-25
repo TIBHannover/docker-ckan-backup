@@ -31,7 +31,9 @@ echo "Creating backup archive: $BACKUP_FILE"
 tar -cf "$BACKUP_FILE" -C "$TMP_FOLDER" ckan-backup.version ckan-db.dump
 
 # Add CKAN files
-tar -rf "$BACKUP_FILE" -C /var/lib/ckan .
+tar -rf "$BACKUP_FILE" -C /var/lib/ckan resources
+tar -rf "$BACKUP_FILE" -C /var/lib/ckan storage
+tar -rf "$BACKUP_FILE" -C /var/lib/ckan webassets
 
 # Clean up temporary folder
 rm -rf "$TMP_FOLDER"

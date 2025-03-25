@@ -36,6 +36,11 @@ echo "Restoring CKAN storage files..."
 # Extract the CKAN files
 tar -xf "$BACKUP_FILE" -C "$TMP_FOLDER" --strip-components=1
 
+rm -rf /var/lib/ckan/* /var/www/html/.??*
+tar -C /var/lib/ckan -xf $BACKUP_FILE resources
+tar -C /var/lib/ckan -xf $BACKUP_FILE storage
+tar -C /var/lib/ckan -xf $BACKUP_FILE webassets
+
 # Move the extracted files to the CKAN storage location
 cp -r "$TMP_FOLDER/var/lib/ckan"/* /var/lib/ckan/
 
