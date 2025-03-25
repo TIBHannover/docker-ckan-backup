@@ -11,25 +11,36 @@ fi
 
 echo "Extracting backup contents..."
 tar -xf "$BACKUP_FILE" -C "$TMP_FOLDER"
-DB_DUMP_FILE="$TMP_FOLDER/ckan-db.dump"
+CKAN_DB_DUMP_FILE="$TMP_FOLDER/ckan-db.dump"
+DATASTORE_DB_DUMP_FILE="$TMP_FOLDER/datastore-db.dump"
 
-if [[ ! -f "$DB_DUMP_FILE" ]]; then
-    echo "Error: Database dump file not found in backup."
+if [[ ! -f "$CKAN_DB_DUMP_FILE" ]]; then
+    echo "Error: CKAN database dump file not found in backup."
+    exit 1
+fi
+
+if [[ ! -f "$DATASTORE_DB_DUMP_FILE" ]]; then
+    echo "Error: Datastore database dump file not found in backup."
     exit 1
 fi
 
 # Drop and recreate the database
-echo "Dropping and recreating database: $CKAN_DB"
-PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p 5432 -U "$POSTGRES_USER" <<EOSQL
-    DROP DATABASE IF EXISTS "$CKAN_DB";
-    CREATE DATABASE "$CKAN_DB" OWNER "$CKAN_DB_USER" ENCODING 'utf-8';
-EOSQL
+#echo "Dropping and recreating database: $CKAN_DB"
+#PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p 5432 -U "$POSTGRES_USER" <<EOSQL
+#    DROP DATABASE IF EXISTS "$CKAN_DB";
+#    CREATE DATABASE "$CKAN_DB" OWNER "$CKAN_DB_USER" ENCODING 'utf-8';
+#EOSQL
 
-# Restore the database
-echo "Restoring database..."
+# Restore the databases
+echo "Restoring CKAN database..."
 PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists --format=custom \
     -h "$POSTGRES_HOST" -p 5432 \
-    -U "$CKAN_DB_USER" -d "$CKAN_DB" "$DB_DUMP_FILE"
+    -U "$CKAN_DB_USER" -d "$CKAN_DB" "$CKAN_DB_DUMP_FILE"
+
+echo "Restoring Datastore database..."
+PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists --format=custom \
+    -h "$POSTGRES_HOST" -p 5432 \
+    -U "$CKAN_DB_USER" -d "$DATASTORE_DB" "$DATASTORE_DB_DUMP_FILE"
 
 # Restore CKAN files (storage directory)
 echo "Restoring CKAN storage files..."

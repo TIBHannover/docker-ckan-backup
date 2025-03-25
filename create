@@ -21,14 +21,19 @@ fi
 echo "$CKAN_BACKUP_VERSION" > "$TMP_FOLDER/ckan-backup.version"
 
 # Backup database
-echo "Backing up database..."
+echo "Backing up CKAN database..."
 PGPASSWORD="$CKAN_DB_PASSWORD" pg_dump --format=custom \
     -h "$POSTGRES_HOST" -p 5432 \
     -U "$CKAN_DB_USER" -d "$CKAN_DB" -f "$TMP_FOLDER/ckan-db.dump"
 
+echo "Backing up Datastore database..."
+PGPASSWORD="$CKAN_DB_PASSWORD" pg_dump --format=custom \
+    -h "$POSTGRES_HOST" -p 5432 \
+    -U "$CKAN_DB_USER" -d "$DATASTORE_DB" -f "$TMP_FOLDER/datastore-db.dump"
+
 # Create the backup archive
 echo "Creating backup archive: $BACKUP_FILE"
-tar -cf "$BACKUP_FILE" -C "$TMP_FOLDER" ckan-backup.version ckan-db.dump
+tar -cf "$BACKUP_FILE" -C "$TMP_FOLDER" ckan-backup.version ckan-db.dump datastore-db.dump
 
 # Add CKAN files
 tar -rf "$BACKUP_FILE" -C /var/lib/ckan resources
