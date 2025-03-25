@@ -1,28 +1,41 @@
 #!/bin/bash
-
 set -eu
 
+# Define backup file location
 BACKUP_FILE=${BACKUP_FILE:-"/backup/ckan-backup.tar"}
+TMP_FOLDER=$(mktemp -d)
 
+# Ensure the backup file is valid
 if [[ -z "$BACKUP_FILE" ]]; then
     echo "Error: BACKUP_FILE is not set."
     exit 1
 fi
 
+# Clean up old backup file if exists
 if [[ "$BACKUP_FILE" == "/backup/ckan-backup.tar" ]]; then
     echo "Removing old backup file: $BACKUP_FILE"
     rm -f "$BACKUP_FILE"
 fi
 
-TMP_FOLDER=`mktemp -d`
-cd $TMP_FOLDER
+# Set version (for tracking the backup version)
+echo "$CKAN_BACKUP_VERSION" > "$TMP_FOLDER/ckan-backup.version"
 
-# Set version
-echo $CKAN_BACKUP_VERSION > ckan-backup.version
-
-# Backup db
+# Backup database
+echo "Backing up database..."
 PGPASSWORD="$CKAN_DB_PASSWORD" pg_dump --format=custom \
     -h "$POSTGRES_HOST" -p 5432 \
-    -U "$CKAN_DB_USER" -d "$CKAN_DB" -f "$BACKUP_FILE"
+    -U "$CKAN_DB_USER" -d "$CKAN_DB" -f "$TMP_FOLDER/ckan-db.dump"
 
-# TODO: Backup files
+# TODO: Backup CKAN files
+echo "Adding CKAN files (placeholder)..."
+# For now, we'll just add a placeholder to the tar file
+touch "$TMP_FOLDER/ckan-files-placeholder.txt"
+
+# Create the final archive
+echo "Creating backup archive: $BACKUP_FILE"
+tar -cf "$BACKUP_FILE" -C "$TMP_FOLDER" ckan-backup.version ckan-db.dump ckan-files-placeholder.txt
+
+# Clean up temporary folder
+rm -rf "$TMP_FOLDER"
+
+echo "Backup completed: $BACKUP_FILE"
