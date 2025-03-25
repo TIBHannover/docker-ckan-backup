@@ -25,16 +25,25 @@ PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p 5432 -U "$POSTGRES_U
     CREATE DATABASE "$CKAN_DB" OWNER "$CKAN_DB_USER" ENCODING 'utf-8';
 EOSQL
 
-# Restore database with the --clean and --if-exists options
+# Restore the database
 echo "Restoring database..."
 PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists --format=custom \
     -h "$POSTGRES_HOST" -p 5432 \
     -U "$CKAN_DB_USER" -d "$CKAN_DB" "$DB_DUMP_FILE"
 
-# TODO: Restore CKAN files (you can add the logic here for your storage files)
-# If you backed up CKAN files earlier, you can restore them here:
-# echo "Restoring CKAN storage..."
-# tar -xzf "$TMP_FOLDER/ckan-storage.tar.gz" -C /var/lib/ckan
+# Restore CKAN files (storage directory)
+echo "Restoring CKAN storage files..."
+# Extract the CKAN files
+tar -xf "$BACKUP_FILE" -C "$TMP_FOLDER" --strip-components=1
 
+# Move the extracted files to the CKAN storage location
+cp -r "$TMP_FOLDER/var/lib/ckan"/* /var/lib/ckan/
+
+# Ensure correct ownership
+echo "Setting correct ownership for CKAN storage files..."
+test "${RESTORE_OWNER:-}" != "" && { echo set owner="$RESTORE_OWNER"; chown -R $RESTORE_OWNER /var/lib/ckan; }
+
+# Clean up temporary folder
 rm -rf "$TMP_FOLDER"
-echo "Database restore completed!"
+
+echo "Restore completed successfully!"
