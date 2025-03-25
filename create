@@ -26,14 +26,12 @@ PGPASSWORD="$CKAN_DB_PASSWORD" pg_dump --format=custom \
     -h "$POSTGRES_HOST" -p 5432 \
     -U "$CKAN_DB_USER" -d "$CKAN_DB" -f "$TMP_FOLDER/ckan-db.dump"
 
-# TODO: Backup CKAN files
-echo "Adding CKAN files (placeholder)..."
-# For now, we'll just add a placeholder to the tar file
-touch "$TMP_FOLDER/ckan-files-placeholder.txt"
-
-# Create the final archive
+# Create the backup archive
 echo "Creating backup archive: $BACKUP_FILE"
-tar -cf "$BACKUP_FILE" -C "$TMP_FOLDER" ckan-backup.version ckan-db.dump ckan-files-placeholder.txt
+tar -cf "$BACKUP_FILE" -C "$TMP_FOLDER" ckan-backup.version ckan-db.dump
+
+# Add CKAN files
+tar -rf "$BACKUP_FILE" -C /var/lib/ckan .
 
 # Clean up temporary folder
 rm -rf "$TMP_FOLDER"
