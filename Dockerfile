@@ -6,6 +6,6 @@ RUN chmod +x /usr/local/bin/* && \
     ln -s /usr/local/bin/create /usr/local/bin/backup && \
     mkdir /backup
 
-ENV CKAN_BACKUP_VERSION=0.0.1
+ENV CKAN_BACKUP_VERSION=0.0.2
 
 #ENTRYPOINT [ "" ]

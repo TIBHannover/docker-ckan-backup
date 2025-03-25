@@ -21,6 +21,8 @@ cd $TMP_FOLDER
 echo $CKAN_BACKUP_VERSION > ckan-backup.version
 
 # Backup db
-pg_dump --format=custom -d "$CKAN_DB" -U "$CKAN_DB_USER" -f "$BACKUP_FILE"
+PGPASSWORD="$CKAN_DB_PASSWORD" pg_dump --format=custom \
+    -h "$POSTGRES_HOST" -p 5432 \
+    -U "$CKAN_DB_USER" -d "$CKAN_DB" -f "$BACKUP_FILE"
 
 # TODO: Backup files
