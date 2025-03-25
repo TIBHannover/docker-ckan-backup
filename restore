@@ -56,9 +56,6 @@ tar -C /var/lib/ckan -xf $BACKUP_FILE webassets
 echo "Setting correct ownership for CKAN storage files..."
 test "${RESTORE_OWNER:-}" != "" && { echo set owner="$RESTORE_OWNER"; chown -R $RESTORE_OWNER /var/lib/ckan; }
 
-# Rebuild search index
-ckan -c ckan.ini search-index rebuild
-
 # Clean up temporary folder
 rm -rf "$TMP_FOLDER"
 
