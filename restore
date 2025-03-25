@@ -1,18 +1,15 @@
 #!/bin/bash
-
 set -eu
 
 BACKUP_FILE=${BACKUP_FILE:-"/backup/ckan-backup.tar"}
+TMP_FOLDER=$(mktemp -d)
 
 if [[ ! -f "$BACKUP_FILE" ]]; then
     echo "Error: Backup file '$BACKUP_FILE' not found."
     exit 1
 fi
 
-echo "Starting database restore from: $BACKUP_FILE"
-
-# Extract database dump from backup archive
-TMP_FOLDER=$(mktemp -d)
+echo "Extracting backup contents..."
 tar -xf "$BACKUP_FILE" -C "$TMP_FOLDER"
 DB_DUMP_FILE="$TMP_FOLDER/ckan-db.dump"
 
@@ -28,13 +25,16 @@ PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p 5432 -U "$POSTGRES_U
     CREATE DATABASE "$CKAN_DB" OWNER "$CKAN_DB_USER" ENCODING 'utf-8';
 EOSQL
 
-# Restore database
+# Restore database with the --clean and --if-exists options
 echo "Restoring database..."
-PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --format=custom \
+PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists --format=custom \
     -h "$POSTGRES_HOST" -p 5432 \
     -U "$CKAN_DB_USER" -d "$CKAN_DB" "$DB_DUMP_FILE"
 
-# Cleanup
-rm -rf "$TMP_FOLDER"
+# TODO: Restore CKAN files (you can add the logic here for your storage files)
+# If you backed up CKAN files earlier, you can restore them here:
+# echo "Restoring CKAN storage..."
+# tar -xzf "$TMP_FOLDER/ckan-storage.tar.gz" -C /var/lib/ckan
 
-echo "Database restore completed successfully!"
+rm -rf "$TMP_FOLDER"
+echo "Database restore completed!"
