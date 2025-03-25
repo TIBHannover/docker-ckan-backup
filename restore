@@ -1,3 +1,40 @@
 #!/bin/bash
 
 set -eu
+
+BACKUP_FILE=${BACKUP_FILE:-"/backup/ckan-backup.tar"}
+
+if [[ ! -f "$BACKUP_FILE" ]]; then
+    echo "Error: Backup file '$BACKUP_FILE' not found."
+    exit 1
+fi
+
+echo "Starting database restore from: $BACKUP_FILE"
+
+# Extract database dump from backup archive
+TMP_FOLDER=$(mktemp -d)
+tar -xf "$BACKUP_FILE" -C "$TMP_FOLDER"
+DB_DUMP_FILE="$TMP_FOLDER/ckan-db.dump"
+
+if [[ ! -f "$DB_DUMP_FILE" ]]; then
+    echo "Error: Database dump file not found in backup."
+    exit 1
+fi
+
+# Drop and recreate the database
+echo "Dropping and recreating database: $CKAN_DB"
+PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p 5432 -U "$POSTGRES_USER" <<EOSQL
+    DROP DATABASE IF EXISTS "$CKAN_DB";
+    CREATE DATABASE "$CKAN_DB" OWNER "$CKAN_DB_USER" ENCODING 'utf-8';
+EOSQL
+
+# Restore database
+echo "Restoring database..."
+PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --format=custom \
+    -h "$POSTGRES_HOST" -p 5432 \
+    -U "$CKAN_DB_USER" -d "$CKAN_DB" "$DB_DUMP_FILE"
+
+# Cleanup
+rm -rf "$TMP_FOLDER"
+
+echo "Database restore completed successfully!"
