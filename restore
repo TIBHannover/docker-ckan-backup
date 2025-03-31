@@ -24,13 +24,6 @@ if [[ ! -f "$DATASTORE_DB_DUMP_FILE" ]]; then
     exit 1
 fi
 
-# Drop and recreate the database
-#echo "Dropping and recreating database: $CKAN_DB"
-#PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p 5432 -U "$POSTGRES_USER" <<EOSQL
-#    DROP DATABASE IF EXISTS "$CKAN_DB";
-#    CREATE DATABASE "$CKAN_DB" OWNER "$CKAN_DB_USER" ENCODING 'utf-8';
-#EOSQL
-
 # Restore the databases
 echo "Restoring CKAN database..."
 PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists --format=custom \
@@ -48,9 +41,9 @@ echo "Restoring CKAN storage files..."
 tar -xf "$BACKUP_FILE" -C "$TMP_FOLDER" --strip-components=1
 
 rm -rf /var/lib/ckan/* /var/lib/ckan/.??*
-tar -C /var/lib/ckan -xf $BACKUP_FILE resources
-tar -C /var/lib/ckan -xf $BACKUP_FILE storage
-tar -C /var/lib/ckan -xf $BACKUP_FILE webassets
+tar -C /var/lib/ckan -xf $BACKUP_FILE resources 2>/dev/null || echo "Warning: 'resources' not found in archive."
+tar -C /var/lib/ckan -xf $BACKUP_FILE storage 2>/dev/null || echo "Warning: 'storage' not found in archive."
+tar -C /var/lib/ckan -xf $BACKUP_FILE webassets 2>/dev/null || echo "Warning: 'webassets' not found in archive."
 
 # Ensure correct ownership
 echo "Setting correct ownership for CKAN storage files..."
