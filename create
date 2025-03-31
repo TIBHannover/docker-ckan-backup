@@ -11,12 +11,6 @@ if [[ -z "$BACKUP_FILE" ]]; then
     exit 1
 fi
 
-# Clean up old backup file if exists
-if [[ "$BACKUP_FILE" == "/backup/ckan-backup.tar" ]]; then
-    echo "Removing old backup file: $BACKUP_FILE"
-    rm -f "$BACKUP_FILE"
-fi
-
 # Set version (for tracking the backup version)
 echo "$CKAN_BACKUP_VERSION" > "$TMP_FOLDER/ckan-backup.version"
 
@@ -31,7 +25,7 @@ PGPASSWORD="$CKAN_DB_PASSWORD" pg_dump --format=custom \
     -h "$POSTGRES_HOST" -p 5432 \
     -U "$CKAN_DB_USER" -d "$DATASTORE_DB" -f "$TMP_FOLDER/datastore-db.dump"
 
-# Create the backup archive
+# Create the backup archive (overwrite existing file)
 echo "Creating backup archive: $BACKUP_FILE"
 tar -cf "$BACKUP_FILE" -C "$TMP_FOLDER" ckan-backup.version ckan-db.dump datastore-db.dump
 
