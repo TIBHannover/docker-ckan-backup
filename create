@@ -29,10 +29,18 @@ PGPASSWORD="$CKAN_DB_PASSWORD" pg_dump --format=custom \
 echo "Creating backup archive: $BACKUP_FILE"
 tar -cf "$BACKUP_FILE" -C "$TMP_FOLDER" ckan-backup.version ckan-db.dump datastore-db.dump
 
-# Add CKAN files
-tar -rf "$BACKUP_FILE" -C /var/lib/ckan resources
-tar -rf "$BACKUP_FILE" -C /var/lib/ckan storage
-tar -rf "$BACKUP_FILE" -C /var/lib/ckan webassets
+# Function to add directory to tar only if it exists
+add_to_tar() {
+    local dir=$1
+    if [[ -d "/var/lib/ckan/$dir" ]]; then
+        tar -rf "$BACKUP_FILE" -C /var/lib/ckan "$dir" --ignore-failed-read
+    fi
+}
+
+# Add CKAN files, only if directories exist
+add_to_tar "resources"
+add_to_tar "storage"
+add_to_tar "webassets"
 
 # Clean up temporary folder
 rm -rf "$TMP_FOLDER"
