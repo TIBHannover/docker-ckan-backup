@@ -24,6 +24,17 @@ if [[ ! -f "$DATASTORE_DB_DUMP_FILE" ]]; then
     exit 1
 fi
 
+# Ensure the pg_restore client is not older than the server (older clients can
+# fail or misbehave restoring a dump taken from a newer Postgres major version)
+CLIENT_PG_VERSION=$(pg_restore --version | grep -oE '[0-9]+' | head -n1)
+SERVER_PG_VERSION=$(PGPASSWORD="$CKAN_DB_PASSWORD" psql -h "$POSTGRES_HOST" -p 5432 \
+    -U "$CKAN_DB_USER" -d "$CKAN_DB" -tAc 'SHOW server_version_num' | cut -c1-2)
+if [[ "$CLIENT_PG_VERSION" -lt "$SERVER_PG_VERSION" ]]; then
+    echo "Error: pg_restore client (major version $CLIENT_PG_VERSION) is older than the database server (major version $SERVER_PG_VERSION)." >&2
+    echo "Use a docker-ckan-backup image built on a Postgres client version >= the server." >&2
+    exit 1
+fi
+
 # Restore the databases
 echo "Restoring CKAN database..."
 PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists --format=custom \

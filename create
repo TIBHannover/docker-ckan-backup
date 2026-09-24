@@ -11,8 +11,24 @@ if [[ -z "$BACKUP_FILE" ]]; then
     exit 1
 fi
 
-# Set version (for tracking the backup version)
-echo "$CKAN_BACKUP_VERSION" > "$TMP_FOLDER/ckan-backup.version"
+# Ensure the pg_dump client is not older than the server (older clients can
+# silently produce dumps that a newer pg_restore misreads across a Postgres
+# major version)
+CLIENT_PG_VERSION=$(pg_dump --version | grep -oE '[0-9]+' | head -n1)
+SERVER_PG_VERSION=$(PGPASSWORD="$CKAN_DB_PASSWORD" psql -h "$POSTGRES_HOST" -p 5432 \
+    -U "$CKAN_DB_USER" -d "$CKAN_DB" -tAc 'SHOW server_version_num' | cut -c1-2)
+if [[ "$CLIENT_PG_VERSION" -lt "$SERVER_PG_VERSION" ]]; then
+    echo "Error: pg_dump client (major version $CLIENT_PG_VERSION) is older than the database server (major version $SERVER_PG_VERSION)." >&2
+    echo "Use a docker-ckan-backup image built on a Postgres client version >= the server." >&2
+    exit 1
+fi
+
+# Record backup tool and Postgres server version (for tracking backup provenance)
+{
+    echo "ckan-backup-version=$CKAN_BACKUP_VERSION"
+    echo "postgres-server-version=$(PGPASSWORD="$CKAN_DB_PASSWORD" psql -h "$POSTGRES_HOST" -p 5432 \
+        -U "$CKAN_DB_USER" -d "$CKAN_DB" -tAc 'SHOW server_version')"
+} > "$TMP_FOLDER/ckan-backup.version"
 
 # Backup database
 echo "Backing up CKAN database..."

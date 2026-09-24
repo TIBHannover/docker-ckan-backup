@@ -1,4 +1,4 @@
-FROM postgres:12-alpine
+FROM postgres:16-alpine
 
 COPY create restore /usr/local/bin/
 
@@ -10,5 +10,5 @@ RUN apk add --no-cache tar && \
     ln -s /usr/local/bin/create /usr/local/bin/backup && \
     mkdir /backup
 
-ENV CKAN_BACKUP_VERSION=1.0.2
+ENV CKAN_BACKUP_VERSION=2.0.0
 ENTRYPOINT [ "" ]
