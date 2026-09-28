@@ -21,9 +21,10 @@ for other CKAN deployments built on top of that stack.
 ### Backup (`create` / `backup`)
 
 1. Checks free space on the filesystem holding `BACKUP_FILE` and aborts if
-   it is below `CKAN_BACKUP_MIN_FREE_PERCENT`, since `create` overwrites
-   `BACKUP_FILE` in place and running out of space mid-write would corrupt
-   the last good backup.
+   it is below `CKAN_BACKUP_MIN_FREE_PERCENT`, since `create` stages the
+   database dumps and overwrites `BACKUP_FILE` in place on that same
+   filesystem, and running out of space mid-write would corrupt the last
+   good backup.
 2. Compares the installed `pg_dump` client's major version against the
    Postgres server's major version and aborts if the client is older, since
    an older client can silently produce dumps a newer `pg_restore` misreads.
