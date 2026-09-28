@@ -5,11 +5,22 @@ set -eu
 BACKUP_FILE=${BACKUP_FILE:-"/backup/ckan-backup.tar"}
 CKAN_STORAGE_PATH=${CKAN_STORAGE_PATH:-"/var/lib/ckan"}
 POSTGRES_PORT=${POSTGRES_PORT:-5432}
+CKAN_BACKUP_MIN_FREE_PERCENT=${CKAN_BACKUP_MIN_FREE_PERCENT:-20}
 TMP_FOLDER=$(mktemp -d)
 
 # Ensure the backup file is valid
 if [[ -z "$BACKUP_FILE" ]]; then
     echo "Error: BACKUP_FILE is not set."
+    exit 1
+fi
+
+# Abort before writing anything if the backup mount is too full to safely
+# hold a new archive (an in-place overwrite of BACKUP_FILE that runs out of
+# space mid-write would corrupt the last good backup).
+BACKUP_MOUNT_DIR=$(dirname "$BACKUP_FILE")
+FREE_PERCENT=$(df -P "$BACKUP_MOUNT_DIR" | awk 'NR==2 { print 100 - $5 }' | tr -d '%')
+if [[ "$FREE_PERCENT" -lt "$CKAN_BACKUP_MIN_FREE_PERCENT" ]]; then
+    echo "Error: only ${FREE_PERCENT}% free space on $BACKUP_MOUNT_DIR, below the required ${CKAN_BACKUP_MIN_FREE_PERCENT}%." >&2
     exit 1
 fi
 

@@ -20,14 +20,18 @@ for other CKAN deployments built on top of that stack.
 
 ### Backup (`create` / `backup`)
 
-1. Compares the installed `pg_dump` client's major version against the
+1. Checks free space on the filesystem holding `BACKUP_FILE` and aborts if
+   it is below `CKAN_BACKUP_MIN_FREE_PERCENT`, since `create` overwrites
+   `BACKUP_FILE` in place and running out of space mid-write would corrupt
+   the last good backup.
+2. Compares the installed `pg_dump` client's major version against the
    Postgres server's major version and aborts if the client is older, since
    an older client can silently produce dumps a newer `pg_restore` misreads.
-2. Dumps the CKAN database and the DataStore database with
+3. Dumps the CKAN database and the DataStore database with
    `pg_dump --format=custom`.
-3. Records the backup tool version and the Postgres server version in a
+4. Records the backup tool version and the Postgres server version in a
    `ckan-backup.version` file for provenance.
-4. Packs the two dumps and the version file into a tar archive, then appends
+5. Packs the two dumps and the version file into a tar archive, then appends
    `resources`, `storage`, and `webassets` from `$CKAN_STORAGE_PATH` if
    present.
 
@@ -63,6 +67,7 @@ triggered separately from the CKAN container after a restore (e.g. via
 | `BACKUP_FILE`       | no       | Path to the backup archive (default `/backup/ckan-backup.tar`)           |
 | `CKAN_STORAGE_PATH` | no       | Path containing `resources`/`storage`/`webassets` (default `/var/lib/ckan`) |
 | `RESTORE_OWNER`     | no       | `user:group` to `chown` the restored files to (e.g. `ckan:ckan`)         |
+| `CKAN_BACKUP_MIN_FREE_PERCENT` | no | Minimum free space (%) required on the `BACKUP_FILE` filesystem before `create` runs (default `20`) |
 
 ## Usage
 
