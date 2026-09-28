@@ -2,6 +2,8 @@
 set -eu
 
 BACKUP_FILE=${BACKUP_FILE:-"/backup/ckan-backup.tar"}
+CKAN_STORAGE_PATH=${CKAN_STORAGE_PATH:-"/var/lib/ckan"}
+POSTGRES_PORT=${POSTGRES_PORT:-5432}
 TMP_FOLDER=$(mktemp -d)
 
 if [[ ! -f "$BACKUP_FILE" ]]; then
@@ -27,7 +29,7 @@ fi
 # Ensure the pg_restore client is not older than the server (older clients can
 # fail or misbehave restoring a dump taken from a newer Postgres major version)
 CLIENT_PG_VERSION=$(pg_restore --version | grep -oE '[0-9]+' | head -n1)
-SERVER_PG_VERSION=$(PGPASSWORD="$CKAN_DB_PASSWORD" psql -h "$POSTGRES_HOST" -p 5432 \
+SERVER_PG_VERSION=$(PGPASSWORD="$CKAN_DB_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" \
     -U "$CKAN_DB_USER" -d "$CKAN_DB" -tAc 'SHOW server_version_num' | cut -c1-2)
 if [[ "$CLIENT_PG_VERSION" -lt "$SERVER_PG_VERSION" ]]; then
     echo "Error: pg_restore client (major version $CLIENT_PG_VERSION) is older than the database server (major version $SERVER_PG_VERSION)." >&2
@@ -38,27 +40,46 @@ fi
 # Restore the databases
 echo "Restoring CKAN database..."
 PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists --format=custom \
-    -h "$POSTGRES_HOST" -p 5432 \
+    -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" \
     -U "$CKAN_DB_USER" -d "$CKAN_DB" "$CKAN_DB_DUMP_FILE"
 
 echo "Restoring Datastore database..."
 PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists --format=custom \
-    -h "$POSTGRES_HOST" -p 5432 \
+    -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" \
     -U "$CKAN_DB_USER" -d "$DATASTORE_DB" "$DATASTORE_DB_DUMP_FILE"
 
 # Restore CKAN files (storage directory)
 echo "Restoring CKAN storage files..."
-# Extract the CKAN files
-tar -xf "$BACKUP_FILE" -C "$TMP_FOLDER" --strip-components=1
 
-rm -rf /var/lib/ckan/* /var/lib/ckan/.??*
-tar -C /var/lib/ckan -xf $BACKUP_FILE resources 2>/dev/null || echo "Warning: 'resources' not found in archive."
-tar -C /var/lib/ckan -xf $BACKUP_FILE storage 2>/dev/null || echo "Warning: 'storage' not found in archive."
-tar -C /var/lib/ckan -xf $BACKUP_FILE webassets 2>/dev/null || echo "Warning: 'webassets' not found in archive."
+# Determine which file directories are actually present in the archive
+# before touching anything on disk, so a database-only or damaged archive
+# can never wipe out the current files.
+ARCHIVE_CONTENTS=$(tar -tf "$BACKUP_FILE")
+FOUND_ANY_DIR=0
+for dir in resources storage webassets; do
+    if grep -q "^$dir/" <<< "$ARCHIVE_CONTENTS"; then
+        FOUND_ANY_DIR=1
+    fi
+done
+
+if [[ "$FOUND_ANY_DIR" -eq 0 ]]; then
+    echo "Error: none of 'resources', 'storage', 'webassets' found in backup archive." >&2
+    echo "Refusing to wipe $CKAN_STORAGE_PATH for a database-only or damaged archive." >&2
+    exit 1
+fi
+
+rm -rf "$CKAN_STORAGE_PATH"/* "$CKAN_STORAGE_PATH"/.??*
+for dir in resources storage webassets; do
+    if grep -q "^$dir/" <<< "$ARCHIVE_CONTENTS"; then
+        tar -C "$CKAN_STORAGE_PATH" -xf "$BACKUP_FILE" "$dir"
+    else
+        echo "Warning: '$dir' not found in archive, skipping."
+    fi
+done
 
 # Ensure correct ownership
 echo "Setting correct ownership for CKAN storage files..."
-test "${RESTORE_OWNER:-}" != "" && { echo set owner="$RESTORE_OWNER"; chown -R $RESTORE_OWNER /var/lib/ckan; }
+test "${RESTORE_OWNER:-}" != "" && { echo set owner="$RESTORE_OWNER"; chown -R $RESTORE_OWNER "$CKAN_STORAGE_PATH"; }
 
 # Clean up temporary folder
 rm -rf "$TMP_FOLDER"

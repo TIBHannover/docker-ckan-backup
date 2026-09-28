@@ -3,6 +3,8 @@ set -eu
 
 # Define backup file location
 BACKUP_FILE=${BACKUP_FILE:-"/backup/ckan-backup.tar"}
+CKAN_STORAGE_PATH=${CKAN_STORAGE_PATH:-"/var/lib/ckan"}
+POSTGRES_PORT=${POSTGRES_PORT:-5432}
 TMP_FOLDER=$(mktemp -d)
 
 # Ensure the backup file is valid
@@ -15,7 +17,7 @@ fi
 # silently produce dumps that a newer pg_restore misreads across a Postgres
 # major version)
 CLIENT_PG_VERSION=$(pg_dump --version | grep -oE '[0-9]+' | head -n1)
-SERVER_PG_VERSION=$(PGPASSWORD="$CKAN_DB_PASSWORD" psql -h "$POSTGRES_HOST" -p 5432 \
+SERVER_PG_VERSION=$(PGPASSWORD="$CKAN_DB_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" \
     -U "$CKAN_DB_USER" -d "$CKAN_DB" -tAc 'SHOW server_version_num' | cut -c1-2)
 if [[ "$CLIENT_PG_VERSION" -lt "$SERVER_PG_VERSION" ]]; then
     echo "Error: pg_dump client (major version $CLIENT_PG_VERSION) is older than the database server (major version $SERVER_PG_VERSION)." >&2
@@ -26,30 +28,31 @@ fi
 # Record backup tool and Postgres server version (for tracking backup provenance)
 {
     echo "ckan-backup-version=$CKAN_BACKUP_VERSION"
-    echo "postgres-server-version=$(PGPASSWORD="$CKAN_DB_PASSWORD" psql -h "$POSTGRES_HOST" -p 5432 \
+    echo "postgres-server-version=$(PGPASSWORD="$CKAN_DB_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" \
         -U "$CKAN_DB_USER" -d "$CKAN_DB" -tAc 'SHOW server_version')"
 } > "$TMP_FOLDER/ckan-backup.version"
 
 # Backup database
 echo "Backing up CKAN database..."
 PGPASSWORD="$CKAN_DB_PASSWORD" pg_dump --format=custom \
-    -h "$POSTGRES_HOST" -p 5432 \
+    -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" \
     -U "$CKAN_DB_USER" -d "$CKAN_DB" -f "$TMP_FOLDER/ckan-db.dump"
 
 echo "Backing up Datastore database..."
 PGPASSWORD="$CKAN_DB_PASSWORD" pg_dump --format=custom \
-    -h "$POSTGRES_HOST" -p 5432 \
+    -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" \
     -U "$CKAN_DB_USER" -d "$DATASTORE_DB" -f "$TMP_FOLDER/datastore-db.dump"
 
 # Create the backup archive (overwrite existing file)
 echo "Creating backup archive: $BACKUP_FILE"
 tar -cf "$BACKUP_FILE" -C "$TMP_FOLDER" ckan-backup.version ckan-db.dump datastore-db.dump
 
-# Function to add directory to tar only if it exists
+# Function to add directory to tar only if it exists. Fails the backup if any
+# file cannot be read, rather than silently producing an incomplete archive.
 add_to_tar() {
     local dir=$1
-    if [[ -d "/var/lib/ckan/$dir" ]]; then
-        tar -rf "$BACKUP_FILE" -C /var/lib/ckan "$dir" --ignore-failed-read
+    if [[ -d "$CKAN_STORAGE_PATH/$dir" ]]; then
+        tar -rf "$BACKUP_FILE" -C "$CKAN_STORAGE_PATH" "$dir"
     fi
 }
 
