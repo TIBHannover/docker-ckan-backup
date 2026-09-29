@@ -38,18 +38,26 @@ for other CKAN deployments built on top of that stack.
 
 ### Restore (`restore`)
 
-1. Extracts the archive and validates that both database dumps are present.
+1. Validates the archive with a single listing pass before changing anything:
+   it must contain `ckan-db.dump`, `datastore-db.dump` and at least one of
+   `resources`, `storage`, `webassets`. A truncated or incomplete archive
+   aborts with an error and a non-zero exit code before any database or
+   storage modification, so a bad archive can't leave a half-restored state
+   (new database, old or empty files) or wipe the current files.
 2. Compares the installed `pg_restore` client's major version against the
    Postgres server's major version and aborts if the client is older.
 3. Restores the CKAN database and the DataStore database with
-   `pg_restore --clean --if-exists`.
-4. Checks the archive for at least one of `resources`, `storage`,
-   `webassets` before touching `$CKAN_STORAGE_PATH`, and aborts if none are
-   present (e.g. a database-only or damaged archive) instead of wiping the
-   current files. Otherwise wipes `$CKAN_STORAGE_PATH` and re-extracts
-   whichever of the three directories are present (a missing individual
+   `pg_restore --clean --if-exists`, streaming each dump straight from the
+   archive to `pg_restore` via stdin (no parallel restore).
+4. Wipes `$CKAN_STORAGE_PATH` and extracts whichever of `resources`,
+   `storage`, `webassets` are present directly into it (a missing individual
    directory only produces a warning).
 5. Optionally `chown`s the restored files if `RESTORE_OWNER` is set.
+
+Nothing from the archive is extracted to the container filesystem, so
+restoring needs no temporary space, whatever the archive size; the only disk
+space required is that of the restored data itself. Any failing step (`tar`,
+`pg_restore`) aborts the script with a non-zero exit code.
 
 Note: restoring does not rebuild the Solr search index. That has to be
 triggered separately from the CKAN container after a restore (e.g. via

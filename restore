@@ -1,28 +1,54 @@
 #!/bin/bash
-set -eu
+set -euo pipefail
 
 BACKUP_FILE=${BACKUP_FILE:-"/backup/ckan-backup.tar"}
 CKAN_STORAGE_PATH=${CKAN_STORAGE_PATH:-"/var/lib/ckan"}
 POSTGRES_PORT=${POSTGRES_PORT:-5432}
-TMP_FOLDER=$(mktemp -d)
 
 if [[ ! -f "$BACKUP_FILE" ]]; then
     echo "Error: Backup file '$BACKUP_FILE' not found."
     exit 1
 fi
 
-echo "Extracting backup contents..."
-tar -xf "$BACKUP_FILE" -C "$TMP_FOLDER"
-CKAN_DB_DUMP_FILE="$TMP_FOLDER/ckan-db.dump"
-DATASTORE_DB_DUMP_FILE="$TMP_FOLDER/datastore-db.dump"
-
-if [[ ! -f "$CKAN_DB_DUMP_FILE" ]]; then
-    echo "Error: CKAN database dump file not found in backup."
+# Validate the archive before touching the databases or the storage directory,
+# so a bad archive can never leave a half-restored state. A single listing pass
+# is reduced to the set of top-level entries and reused below. Nothing is
+# extracted to the container filesystem: dumps are streamed, files are
+# extracted straight into $CKAN_STORAGE_PATH.
+echo "Validating backup archive..."
+if ! ARCHIVE_ENTRIES=$(tar -tf "$BACKUP_FILE" | awk -F/ '!seen[$1]++ { print $1 }'); then
+    echo "Error: could not read backup archive '$BACKUP_FILE' (truncated or damaged?)." >&2
     exit 1
 fi
 
-if [[ ! -f "$DATASTORE_DB_DUMP_FILE" ]]; then
-    echo "Error: Datastore database dump file not found in backup."
+has_entry() {
+    grep -qxF -- "$1" <<< "$ARCHIVE_ENTRIES"
+}
+
+if ! has_entry ckan-db.dump; then
+    echo "Error: CKAN database dump file not found in backup." >&2
+    exit 1
+fi
+
+if ! has_entry datastore-db.dump; then
+    echo "Error: Datastore database dump file not found in backup." >&2
+    exit 1
+fi
+
+# Determine which file directories are actually present in the archive, so a
+# database-only or damaged archive can never wipe out the current files.
+PRESENT_DIRS=()
+for dir in resources storage webassets; do
+    if has_entry "$dir"; then
+        PRESENT_DIRS+=("$dir")
+    else
+        echo "Warning: '$dir' not found in archive, will be skipped."
+    fi
+done
+
+if [[ ${#PRESENT_DIRS[@]} -eq 0 ]]; then
+    echo "Error: none of 'resources', 'storage', 'webassets' found in backup archive." >&2
+    echo "Refusing to wipe $CKAN_STORAGE_PATH for a database-only or damaged archive." >&2
     exit 1
 fi
 
@@ -37,51 +63,27 @@ if [[ "$CLIENT_PG_VERSION" -lt "$SERVER_PG_VERSION" ]]; then
     exit 1
 fi
 
-# Restore the databases
+# Restore the databases, streaming each dump from the archive to pg_restore
+# (no -j: parallel restore needs a seekable file)
 echo "Restoring CKAN database..."
-PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists --format=custom \
-    -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" \
-    -U "$CKAN_DB_USER" -d "$CKAN_DB" "$CKAN_DB_DUMP_FILE"
+tar -xOf "$BACKUP_FILE" --occurrence=1 ckan-db.dump \
+    | PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists --format=custom \
+        -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" \
+        -U "$CKAN_DB_USER" -d "$CKAN_DB"
 
 echo "Restoring Datastore database..."
-PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists --format=custom \
-    -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" \
-    -U "$CKAN_DB_USER" -d "$DATASTORE_DB" "$DATASTORE_DB_DUMP_FILE"
+tar -xOf "$BACKUP_FILE" --occurrence=1 datastore-db.dump \
+    | PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists --format=custom \
+        -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" \
+        -U "$CKAN_DB_USER" -d "$DATASTORE_DB"
 
 # Restore CKAN files (storage directory)
 echo "Restoring CKAN storage files..."
-
-# Determine which file directories are actually present in the archive
-# before touching anything on disk, so a database-only or damaged archive
-# can never wipe out the current files.
-ARCHIVE_CONTENTS=$(tar -tf "$BACKUP_FILE")
-FOUND_ANY_DIR=0
-for dir in resources storage webassets; do
-    if grep -q "^$dir/" <<< "$ARCHIVE_CONTENTS"; then
-        FOUND_ANY_DIR=1
-    fi
-done
-
-if [[ "$FOUND_ANY_DIR" -eq 0 ]]; then
-    echo "Error: none of 'resources', 'storage', 'webassets' found in backup archive." >&2
-    echo "Refusing to wipe $CKAN_STORAGE_PATH for a database-only or damaged archive." >&2
-    exit 1
-fi
-
 rm -rf "$CKAN_STORAGE_PATH"/* "$CKAN_STORAGE_PATH"/.??*
-for dir in resources storage webassets; do
-    if grep -q "^$dir/" <<< "$ARCHIVE_CONTENTS"; then
-        tar -C "$CKAN_STORAGE_PATH" -xf "$BACKUP_FILE" "$dir"
-    else
-        echo "Warning: '$dir' not found in archive, skipping."
-    fi
-done
+tar -C "$CKAN_STORAGE_PATH" -xf "$BACKUP_FILE" "${PRESENT_DIRS[@]}"
 
 # Ensure correct ownership
 echo "Setting correct ownership for CKAN storage files..."
 test "${RESTORE_OWNER:-}" != "" && { echo set owner="$RESTORE_OWNER"; chown -R $RESTORE_OWNER "$CKAN_STORAGE_PATH"; }
-
-# Clean up temporary folder
-rm -rf "$TMP_FOLDER"
 
 echo "Restore completed successfully!"
