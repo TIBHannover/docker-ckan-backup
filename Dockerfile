@@ -10,5 +10,5 @@ RUN apk add --no-cache tar && \
     ln -s /usr/local/bin/create /usr/local/bin/backup && \
     mkdir /backup
 
-ENV CKAN_BACKUP_VERSION=2.1.2
+ENV CKAN_BACKUP_VERSION=2.1.3
 ENTRYPOINT [ "" ]
