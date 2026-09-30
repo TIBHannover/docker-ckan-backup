@@ -54,7 +54,7 @@ fi
 
 # Ensure the pg_restore client is not older than the server (older clients can
 # fail or misbehave restoring a dump taken from a newer Postgres major version)
-CLIENT_PG_VERSION=$(pg_restore --version | grep -oE '[0-9]+' | head -n1)
+CLIENT_PG_VERSION=$(pg_restore --version | sed -E 's/[^0-9]*([0-9]+).*/\1/')
 SERVER_PG_VERSION=$(PGPASSWORD="$CKAN_DB_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" \
     -U "$CKAN_DB_USER" -d "$CKAN_DB" -tAc 'SHOW server_version_num' | cut -c1-2)
 if [[ "$CLIENT_PG_VERSION" -lt "$SERVER_PG_VERSION" ]]; then
