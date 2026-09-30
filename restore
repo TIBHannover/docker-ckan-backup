@@ -64,18 +64,47 @@ if [[ "$CLIENT_PG_VERSION" -lt "$SERVER_PG_VERSION" ]]; then
 fi
 
 # Restore the databases, streaming each dump from the archive to pg_restore
-# (no -j: parallel restore needs a seekable file)
+# (no -j: parallel restore needs a seekable file).
+# The public schema is reset first: --clean only drops objects listed in the
+# dump, so objects created by the target installation (e.g. foreign keys
+# missing from an older dump) would block dropping tables/constraints.
+# --no-owner/--no-privileges: the dump may come from an installation with
+# different database roles; everything is owned by the connecting user.
+reset_schema() {
+    PGPASSWORD="$CKAN_DB_PASSWORD" psql -v ON_ERROR_STOP=1 \
+        -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$CKAN_DB_USER" -d "$1" \
+        -c 'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;'
+}
+
 echo "Restoring CKAN database..."
+reset_schema "$CKAN_DB"
 tar -xOf "$BACKUP_FILE" --occurrence=1 ckan-db.dump \
-    | PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists --format=custom \
+    | PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists \
+        --no-owner --no-privileges --format=custom \
         -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" \
         -U "$CKAN_DB_USER" -d "$CKAN_DB"
 
 echo "Restoring Datastore database..."
+reset_schema "$DATASTORE_DB"
 tar -xOf "$BACKUP_FILE" --occurrence=1 datastore-db.dump \
-    | PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists --format=custom \
+    | PGPASSWORD="$CKAN_DB_PASSWORD" pg_restore --verbose --clean --if-exists \
+        --no-owner --no-privileges --format=custom \
         -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" \
         -U "$CKAN_DB_USER" -d "$DATASTORE_DB"
+
+# --no-privileges dropped all grants, including those of the DataStore
+# read-only role; re-apply what `ckan datastore set-permissions` would set.
+if [[ -n "${DATASTORE_READONLY_USER:-}" ]]; then
+    echo "Restoring DataStore read-only permissions for '$DATASTORE_READONLY_USER'..."
+    PGPASSWORD="$CKAN_DB_PASSWORD" psql -v ON_ERROR_STOP=1 -q \
+        -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$CKAN_DB_USER" -d "$DATASTORE_DB" \
+        -v ro="$DATASTORE_READONLY_USER" -v db="$DATASTORE_DB" -v rw="$CKAN_DB_USER" <<'EOSQL'
+GRANT CONNECT ON DATABASE :"db" TO :"ro";
+GRANT USAGE ON SCHEMA public TO :"ro";
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO :"ro";
+ALTER DEFAULT PRIVILEGES FOR ROLE :"rw" IN SCHEMA public GRANT SELECT ON TABLES TO :"ro";
+EOSQL
+fi
 
 # Restore CKAN files (storage directory)
 echo "Restoring CKAN storage files..."

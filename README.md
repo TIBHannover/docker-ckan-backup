@@ -46,9 +46,16 @@ for other CKAN deployments built on top of that stack.
    (new database, old or empty files) or wipe the current files.
 2. Compares the installed `pg_restore` client's major version against the
    Postgres server's major version and aborts if the client is older.
-3. Restores the CKAN database and the DataStore database with
-   `pg_restore --clean --if-exists`, streaming each dump straight from the
-   archive to `pg_restore` via stdin (no parallel restore).
+3. Resets the `public` schema of the CKAN and DataStore databases, then
+   restores both with `pg_restore --clean --if-exists --no-owner
+   --no-privileges`, streaming each dump straight from the archive to
+   `pg_restore` via stdin (no parallel restore). Resetting the schema avoids
+   dependency errors from objects that exist in the target but not in the
+   dump; `--no-owner`/`--no-privileges` make the restore independent of the
+   database roles of the source installation (all objects are owned by
+   `CKAN_DB_USER`). If `DATASTORE_READONLY_USER` is set, its read permissions
+   on the DataStore database are re-applied afterwards (the role must
+   already exist); other custom grants are not restored.
 4. Wipes `$CKAN_STORAGE_PATH` and extracts whichever of `resources`,
    `storage`, `webassets` are present directly into it (a missing individual
    directory only produces a warning).
@@ -72,6 +79,7 @@ triggered separately from the CKAN container after a restore (e.g. via
 | `CKAN_DB_PASSWORD`  | yes      | Password for `CKAN_DB_USER`                                              |
 | `CKAN_DB`           | yes      | Name of the CKAN database                                                |
 | `DATASTORE_DB`      | yes      | Name of the DataStore database                                           |
+| `DATASTORE_READONLY_USER` | no | DataStore read-only role; restore re-applies its `SELECT` grants   |
 | `POSTGRES_PORT`     | no       | Port of the Postgres server (default `5432`)                             |
 | `BACKUP_FILE`       | no       | Path to the backup archive (default `/backup/ckan-backup.tar`)           |
 | `CKAN_STORAGE_PATH` | no       | Path containing `resources`/`storage`/`webassets` (default `/var/lib/ckan`) |
